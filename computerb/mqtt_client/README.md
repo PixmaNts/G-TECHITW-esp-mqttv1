@@ -4,12 +4,13 @@ A Rust-based MQTT subscriber that listens for messages from the ESP32 GPIO butto
 
 ## Overview
 
-This application subscribes to the MQTT topic `/esp32_gpio` and prints messages whenever the ESP32 publishes a button press event.
+This application subscribes to the MQTT topic `/esp32_gpio` and prints messages whenever the ESP32 publishes a button press event. It can also publish messages to the `/esp32_commands` topic for bidirectional communication with the ESP32.
 
 ## Features
 
 - MQTT client using `rumqttc` library
-- Subscribes to `/esp32_gpio` topic
+- Subscribes to `/esp32_gpio` topic to receive button press events
+- **Publishes to `/esp32_commands` topic** to send commands to ESP32
 - Prints received messages to console
 - Dockerized for easy deployment
 
@@ -31,12 +32,13 @@ mqtt_client/
 
 ## Configuration
 
-The MQTT broker and topic are configured in `src/main.rs`:
+The MQTT broker and topics are configured in `src/main.rs`:
 
 ```rust
-let broker = "broker.hivemq.com";  // MQTT broker address
-let port = 1883;                    // MQTT port
-let topic = "/esp32_gpio";           // Topic to subscribe to
+let broker = "broker.hivemq.com";      // MQTT broker address
+let port = 1883;                        // MQTT port
+let subscribe_topic = "/esp32_gpio";    // Topic to subscribe to (receive button presses)
+let publish_topic = "/esp32_commands";  // Topic to publish to (send commands to ESP32)
 ```
 
 ### Using Local Broker
@@ -59,14 +61,24 @@ The binary will be in `target/release/mqtt_client`.
 
 ### Run Locally
 
+**Subscribe only (listen for button presses):**
 ```bash
 cargo run --release
+```
+
+**Publish a message to ESP32:**
+```bash
+cargo run --release -- "Hello ESP32"
 ```
 
 Or run the binary directly:
 
 ```bash
+# Subscribe only
 ./target/release/mqtt_client
+
+# Publish message
+./target/release/mqtt_client "Your message here"
 ```
 
 ## Docker Deployment
@@ -88,20 +100,37 @@ The container will connect to the MQTT broker and start listening for messages.
 ## How It Works
 
 1. **Connection**: Creates MQTT client and connects to the broker
-2. **Subscription**: Subscribes to the `esp32_gpio` topic
-3. **Event Loop**: Continuously polls for incoming messages
-4. **Message Handling**: Prints received messages to console
+2. **Subscription**: Subscribes to the `/esp32_gpio` topic to receive button press events
+3. **Publishing** (optional): If a message is provided as command-line argument, publishes it to `/esp32_commands` topic
+4. **Event Loop**: Continuously polls for incoming messages
+5. **Message Handling**: Prints received messages to console
 
 ## Expected Output
 
-When the ESP32 button is pressed, you should see:
+### Subscribe Mode (No Arguments)
+
+When running without arguments, the client subscribes and waits for messages:
 
 ```
-Starting MQTT subscriber...
+Starting MQTT client...
 Subscribed to topic: /esp32_gpio
+No message provided. Usage: cargo run -- "<message>"
 Waiting for messages from ESP32...
 [CONNECTED] Connected to MQTT broker: broker.hivemq.com
 [RECEIVED] Topic: '/esp32_gpio' | Message: 'pressed'
+[RECEIVED] Topic: '/esp32_gpio' | Message: 'pressed'
+```
+
+### Publish Mode (With Message Argument)
+
+When running with a message argument:
+
+```
+Starting MQTT client...
+Subscribed to topic: /esp32_gpio
+Publishing message to /esp32_commands: Hello ESP32
+Message published successfully!
+[CONNECTED] Connected to MQTT broker: broker.hivemq.com
 [RECEIVED] Topic: '/esp32_gpio' | Message: 'pressed'
 ```
 
@@ -118,8 +147,15 @@ Waiting for messages from ESP32...
 
 - Verify ESP32 is connected and publishing
 - Check that both ESP32 and client are using the same broker
-- Verify topic name matches: `/esp32_gpio`
+- Verify topic name matches: `/esp32_gpio` (for receiving) or `/esp32_commands` (for sending)
 - Check ESP32 serial output for connection status
+
+### Publishing Messages
+
+- Use command-line argument: `cargo run -- "Your message"`
+- Message will be published to `/esp32_commands` topic
+- ESP32 should log the received message in its serial output
+- Verify ESP32 is subscribed to `/esp32_commands` (check ESP32 logs on connection)
 
 ### Docker Issues
 

@@ -60,11 +60,18 @@ See [computerb/mqtt_client/README.md](computerb/mqtt_client/README.md) for detai
 
 ## How It Works
 
+### Unidirectional Communication (Basic)
 1. **ESP32** connects to WiFi and MQTT broker
 2. **ESP32** monitors GPIO pin for button presses
 3. When button is pressed (pin goes HIGH), ESP32 publishes "pressed" to `/esp32_gpio` topic
 4. **Rust client** subscribes to `/esp32_gpio` topic
 5. **Rust client** prints received messages to console
+
+### Bidirectional Communication (Bonus Feature)
+1. **ESP32** automatically subscribes to `/esp32_commands` topic on MQTT connection
+2. **Rust client** can publish messages to `/esp32_commands` topic
+3. **ESP32** receives and logs messages from the computer
+4. Enables two-way communication between ESP32 and computer
 
 ## Requirements Met
 
@@ -76,14 +83,38 @@ See [computerb/mqtt_client/README.md](computerb/mqtt_client/README.md) for detai
 ✅ README files in both directories  
 ✅ GPIO pin configurable via menuconfig  
 ✅ MQTT broker configurable (local or public)  
+✅ **Bidirectional MQTT communication** (ESP32 can receive commands)  
 
 ## MQTT Configuration
 
-- **Topic**: `/esp32_gpio`
-- **Message**: `"pressed"` (when button is pressed)
-- **Broker Options**:
-  - Public: `mqtt://broker.hivemq.com:1883`
-  - Local: `mqtt://localhost:1883` (requires Mosquitto)
+### Topics
+
+- **`/esp32_gpio`** (ESP32 → Computer)
+  - ESP32 publishes "pressed" when button is pressed
+  - Rust client subscribes to receive button press events
+
+- **`/esp32_commands`** (Computer → ESP32)
+  - Rust client publishes commands to this topic
+  - ESP32 subscribes to receive commands from computer
+
+### Broker Options
+
+- Public: `mqtt://broker.hivemq.com:1883`
+- Local: `mqtt://localhost:1883` (requires Mosquitto)
+
+### Usage Examples
+
+**Receive button presses:**
+```bash
+cd computerb/mqtt_client
+cargo run
+```
+
+**Send command to ESP32:**
+```bash
+cd computerb/mqtt_client
+cargo run -- "Hello ESP32"
+```
 
 ## Development Environment
 

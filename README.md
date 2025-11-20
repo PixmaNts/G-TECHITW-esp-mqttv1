@@ -6,12 +6,15 @@ This ESP32 application monitors a GPIO pin for button presses and publishes MQTT
 
 The ESP32 connects to a WiFi network and an MQTT broker. When a button connected to a GPIO pin is pressed (pin goes HIGH), the device publishes the string "pressed" to the MQTT topic `/esp32_gpio`.
 
+**Bidirectional Communication**: The ESP32 also subscribes to the `/esp32_commands` topic and can receive messages from the computer, enabling two-way communication.
+
 ## Features
 
 - WiFi connection with configurable credentials
 - MQTT client connection to configurable broker
 - GPIO button monitoring with edge detection
 - Automatic MQTT message publishing on button press
+- **Bidirectional MQTT communication** - ESP32 can receive commands from computer
 - Configurable GPIO pin via menuconfig
 
 ## Hardware Requirements
@@ -107,9 +110,11 @@ To exit the monitor, press `Ctrl+]`.
 1. **Initialization**: The application initializes NVS, network interface, and event loop
 2. **WiFi Connection**: Connects to the configured WiFi network
 3. **MQTT Connection**: Connects to the configured MQTT broker
-4. **GPIO Setup**: Configures the specified GPIO pin as input with pull-down resistor
-5. **Monitoring Task**: A FreeRTOS task continuously polls the GPIO pin every 50ms
-6. **Button Detection**: When the pin transitions from LOW to HIGH (button pressed), it publishes "pressed" to `/esp32_gpio` topic
+4. **MQTT Subscription**: Automatically subscribes to `/esp32_commands` topic for receiving commands
+5. **GPIO Setup**: Configures the specified GPIO pin as input with pull-down resistor
+6. **Monitoring Task**: A FreeRTOS task continuously polls the GPIO pin every 50ms
+7. **Button Detection**: When the pin transitions from LOW to HIGH (button pressed), it publishes "pressed" to `/esp32_gpio` topic
+8. **Command Reception**: When a message is received on `/esp32_commands`, it logs the topic and payload
 
 ## Code Structure
 
@@ -119,7 +124,12 @@ To exit the monitor, press `Ctrl+]`.
 - **`gpio_init()`**: Configures GPIO pin as input
 - **`gpio_task()`**: Background task that monitors button and publishes MQTT messages
 - **`mqtt_app_start()`**: Initializes and starts MQTT client
-- **`mqtt_event_handler()`**: Handles MQTT events (connection, disconnection, etc.)
+- **`mqtt_event_handler()`**: Handles MQTT events (connection, disconnection, data reception, etc.)
+
+### MQTT Topics
+
+- **`/esp32_gpio`** (Publish): ESP32 publishes "pressed" when button is pressed
+- **`/esp32_commands`** (Subscribe): ESP32 receives commands from the computer
 
 ### Key Features
 
@@ -129,11 +139,33 @@ To exit the monitor, press `Ctrl+]`.
 
 ## Expected Output
 
+### Button Press (ESP32 → Computer)
+
 When the button is pressed, you should see:
 
 ```
 I (xxxxx) mqtt_example: Button pressed! Published to /esp32_gpio, msg_id=12345
 I (xxxxx) mqtt_example: MQTT_EVENT_PUBLISHED, msg_id=12345
+```
+
+### Command Reception (Computer → ESP32)
+
+When the computer publishes a message to `/esp32_commands`, you should see:
+
+```
+I (xxxxx) mqtt_example: MQTT_EVENT_DATA
+I (xxxxx) mqtt_example: Topic: /esp32_commands
+I (xxxxx) mqtt_example: Data: Hello ESP32
+```
+
+### Connection and Subscription
+
+On startup, you should see:
+
+```
+I (xxxxx) mqtt_example: MQTT_EVENT_CONNECTED
+I (xxxxx) mqtt_example: Ready to publish button presses to /esp32_gpio
+I (xxxxx) mqtt_example: Subscribed to /esp32_commands topic, msg_id=1
 ```
 
 ## Troubleshooting
