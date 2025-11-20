@@ -1,6 +1,9 @@
 use openai_api_rs::v1::api::OpenAIClient;
 use openai_api_rs::v1::chat_completion::{ChatCompletionRequest, ChatCompletionMessage, MessageRole, Content};
+use rumqttc::{AsyncClient, MqttOptions, QoS, Event, Incoming};
 use std::env;
+use std::time::Duration;
+use tokio::time::timeout;
 
 /// Integration test for ChatGPT API integration
 /// 
@@ -54,7 +57,7 @@ async fn test_chatgpt_api_integration() {
     
     // Create request
     let mut req = ChatCompletionRequest::new(
-        "x-ai/grok-4.1-fast".to_string(),
+        model,
         messages,
     );
     req.temperature = Some(0.7);
@@ -193,4 +196,127 @@ async fn test_conversation_history() {
     }
     
     println!("✅ Conversation history test passed!");
+}
+
+/// Integration test for MQTT broker connectivity
+/// 
+/// This test verifies:
+/// - Connection to MQTT broker
+/// - Subscribing to a topic
+/// - Publishing messages
+/// - Receiving published messages
+/// 
+/// This test requires:
+/// - Network connectivity to MQTT broker
+/// - MQTT_BROKER environment variable (optional, defaults to broker.hivemq.com)
+/// - MQTT_PORT environment variable (optional, defaults to 1883)
+/// 
+/// Run with: cargo test --test integration_test test_mqtt_broker -- --nocapture
+#[tokio::test]
+async fn test_mqtt_broker() {
+    // Get MQTT broker configuration from environment (with defaults)
+    let broker = env::var("MQTT_BROKER")
+        .unwrap_or_else(|_| "broker.hivemq.com".to_string());
+    
+    let port: u16 = env::var("MQTT_PORT")
+        .unwrap_or_else(|_| "1883".to_string())
+        .parse()
+        .expect("MQTT_PORT must be a valid port number");
+    
+    // Use a unique test topic to avoid conflicts
+    let test_topic = format!("/test/mqtt_integration_{}", std::process::id());
+    let test_message = "Hello from MQTT integration test!";
+    
+    println!("Testing MQTT broker connectivity...");
+    println!("Broker: {}:{}", broker, port);
+    println!("Test topic: {}", test_topic);
+    
+    // Create MQTT client options
+    let client_id = format!("test_client_{}", std::process::id());
+    let mut mqttoptions = MqttOptions::new(client_id, broker.clone(), port);
+    mqttoptions.set_keep_alive(Duration::from_secs(5));
+    
+    // Create async client and event loop
+    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
+    
+    // Subscribe to test topic
+    println!("Subscribing to topic: {}", test_topic);
+    client
+        .subscribe(&test_topic, QoS::AtMostOnce)
+        .await
+        .expect("Failed to subscribe to test topic");
+    
+    // Wait a bit for subscription to be processed
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    
+    // Publish test message
+    println!("Publishing test message: {}", test_message);
+    client
+        .publish(&test_topic, QoS::AtMostOnce, false, test_message.as_bytes())
+        .await
+        .expect("Failed to publish test message");
+    
+    // Wait for the message to be received (with timeout)
+    println!("Waiting for message to be received...");
+    let receive_timeout = Duration::from_secs(10);
+    let mut message_received = false;
+    let mut connection_established = false;
+    
+    let start_time = std::time::Instant::now();
+    
+    loop {
+        // Check timeout
+        if start_time.elapsed() > receive_timeout {
+            break;
+        }
+        
+        // Poll for events with a short timeout
+        match timeout(Duration::from_millis(500), eventloop.poll()).await {
+            Ok(Ok(Event::Incoming(Incoming::ConnAck(_)))) => {
+                println!("✅ Connected to MQTT broker");
+                connection_established = true;
+            }
+            Ok(Ok(Event::Incoming(Incoming::Publish(publish)))) => {
+                let payload = String::from_utf8_lossy(&publish.payload);
+                println!("✅ Received message on topic '{}': {}", publish.topic, payload);
+                
+                // Verify it's our test message
+                if publish.topic == test_topic && payload == test_message {
+                    println!("✅ Message matches expected content!");
+                    message_received = true;
+                    break;
+                }
+            }
+            Ok(Ok(Event::Incoming(Incoming::SubAck(_)))) => {
+                println!("✅ Subscription acknowledged");
+            }
+            Ok(Ok(Event::Incoming(Incoming::PubAck(_)))) => {
+                println!("✅ Publish acknowledged");
+            }
+            Ok(Err(e)) => {
+                eprintln!("❌ MQTT error: {:?}", e);
+                break;
+            }
+            Err(_) => {
+                // Timeout on poll, continue waiting
+                continue;
+            }
+            _ => {
+                // Other events, continue
+            }
+        }
+    }
+    
+    // Verify results
+    assert!(
+        connection_established,
+        "Should have established connection to MQTT broker"
+    );
+    
+    assert!(
+        message_received,
+        "Should have received the published test message"
+    );
+    
+    println!("✅ MQTT broker integration test passed!");
 }
