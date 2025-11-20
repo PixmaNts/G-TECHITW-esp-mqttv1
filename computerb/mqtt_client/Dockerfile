@@ -1,6 +1,12 @@
 FROM rust:1.91.1-slim-bookworm as builder
 WORKDIR /app
 
+# Install build dependencies for SSL/TLS (required for HTTPS/OpenAI API)
+RUN apt-get update && apt-get install -y \
+    libssl-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy workspace files
 COPY Cargo.toml Cargo.lock* ./
 COPY . .
