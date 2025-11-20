@@ -227,34 +227,57 @@ export OPENROUTER_MODEL="x-ai/grok-4.1-fast"  # Default (free model)
 
 ## Integration Tests
 
-Integration tests are available to verify ChatGPT API connectivity. These tests make real API calls to verify the integration works.
+Integration tests are available to verify both ChatGPT API connectivity and MQTT broker functionality. These tests make real API calls and MQTT connections to verify the integration works.
 
 ### Prerequisites
 
+**For ChatGPT API tests:**
 - Set `OPENROUTER_API_KEY` environment variable (or `OPENAI_API_KEY`)
 - Optionally set `OPENROUTER_BASE_URL` (or `OPENAI_API_BASE`) for custom endpoints
 - See [openAi_usage.md](openAi_usage.md) for detailed setup instructions
 
+**For MQTT broker test:**
+- Network connectivity to MQTT broker
+- Optionally set `MQTT_BROKER` (defaults to `broker.hivemq.com`)
+- Optionally set `MQTT_PORT` (defaults to `1883`)
+
 ### Running the Tests
 
+**Run all integration tests:**
 ```bash
-# Set your OpenRouter API key
+# Set your OpenRouter API key (for ChatGPT tests)
 export OPENROUTER_API_KEY="sk-or-v1-xxxxx"
 
 # Set OpenRouter base URL (optional, defaults to OpenAI)
 export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
 
-# Run the integration tests
+# Run all integration tests
 cargo test --test integration_test -- --nocapture
+```
+
+**Run specific tests:**
+```bash
+# Run only ChatGPT API tests
+cargo test --test integration_test test_chatgpt -- --nocapture
+
+# Run only MQTT broker test
+cargo test --test integration_test test_mqtt_broker -- --nocapture
+
+# Run with custom MQTT broker
+export MQTT_BROKER="localhost"
+export MQTT_PORT="1883"
+cargo test --test integration_test test_mqtt_broker -- --nocapture
 ```
 
 ### What the Tests Do
 
 - **`test_chatgpt_api_integration`**: Tests a simple ChatGPT API call with a single message
 - **`test_conversation_history`**: Tests conversation history with multiple messages (simulates the endless discussion flow)
+- **`test_mqtt_broker`**: Tests MQTT broker connectivity, subscription, publishing, and message reception
 
 ### Example Output
 
+**ChatGPT API Tests:**
 ```
 Running tests/integration_test.rs
 Testing ChatGPT API integration...
@@ -270,11 +293,34 @@ Sending conversation to ChatGPT API...
 ✅ Conversation history test passed!
 ```
 
+**MQTT Broker Test:**
+```
+Testing MQTT broker connectivity...
+Broker: broker.hivemq.com:1883
+Test topic: /test/mqtt_integration_12345
+Subscribing to topic: /test/mqtt_integration_12345
+✅ Connected to MQTT broker
+✅ Subscription acknowledged
+Publishing test message: Hello from MQTT integration test!
+✅ Publish acknowledged
+Waiting for message to be received...
+✅ Received message on topic '/test/mqtt_integration_12345': Hello from MQTT integration test!
+✅ Message matches expected content!
+✅ MQTT broker integration test passed!
+```
+
 ### Troubleshooting Tests
 
+**ChatGPT API Tests:**
 - **Missing API key**: Ensure `OPENROUTER_API_KEY` or `OPENAI_API_KEY` is set
 - **Connection errors**: Check your internet connection and API endpoint URL
 - **API errors**: Verify your API key is valid and has sufficient credits/quota
+
+**MQTT Broker Test:**
+- **Connection timeout**: Check network connectivity to the MQTT broker
+- **Broker unreachable**: Verify `MQTT_BROKER` and `MQTT_PORT` are correct
+- **Message not received**: Ensure firewall allows outbound connections on port 1883
+- **For local broker**: Use `export MQTT_BROKER="localhost"` and ensure Mosquitto is running
 
 ## Dependencies
 
