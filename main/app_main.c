@@ -1,12 +1,3 @@
-/* MQTT (over TCP) Example
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
-
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -64,12 +55,22 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
         ESP_LOGI(TAG, "Ready to publish button presses to /esp32_gpio");
+        // Subscribe to command topic for bidirectional communication
+        int msg_id_sub = esp_mqtt_client_subscribe(event->client, "/esp32_commands", 0);
+        ESP_LOGI(TAG, "Subscribed to /esp32_commands topic, msg_id=%d", msg_id_sub);
         break;
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
         break;
     case MQTT_EVENT_PUBLISHED:
         ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
+        break;
+    case MQTT_EVENT_DATA:
+        ESP_LOGI(TAG, "MQTT_EVENT_DATA");
+        ESP_LOGI(TAG, "Topic: %.*s", event->topic_len, event->topic);
+        ESP_LOGI(TAG, "Data: %.*s", event->data_len, event->data);
+        // The payload is in event->data, length is event->data_len
+        // For future: can process commands here (e.g., control GPIO, change behavior, etc.)
         break;
     case MQTT_EVENT_ERROR:
         ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
