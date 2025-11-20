@@ -1,0 +1,85 @@
+# ESP-IDF Build Artifacts
+build/
+sdkconfig.old
+sdkconfig.defaults
+*.bin
+*.elf
+*.map
+dependencies.lock
+
+# ESP-IDF Generated Files
+managed_components/
+
+# Note: sdkconfig contains user configuration and may be committed
+# Uncomment the line below if you want to ignore sdkconfig:
+# sdkconfig
+
+# Rust Build Artifacts
+target/
+**/target/
+# Note: Cargo.lock should be committed for applications (keeps dependency versions locked)
+# Cargo.lock is intentionally NOT ignored
+
+# Rust IDE files
+**/*.rs.bk
+**/flycheck*
+
+# Python (ESP-IDF tools)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+*.log.*
+log/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Docker
+.dockerignore
+
+# Test coverage
+coverage/
+*.gcov
+*.gcda
+*.gcno
+
+# Documentation builds
+docs/_build/
+site/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+

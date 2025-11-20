@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "computerb/mqtt_client",
+]
+resolver = "2"

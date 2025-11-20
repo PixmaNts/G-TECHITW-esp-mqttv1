@@ -1,0 +1,22 @@
+menu "Example Configuration"
+
+    config BROKER_URL
+        string "Broker URL"
+        default "mqtt://mqtt.eclipseprojects.io"
+        help
+            URL of the broker to connect to
+
+    config BROKER_URL_FROM_STDIN
+        bool
+        default y if BROKER_URL = "FROM_STDIN"
+
+    config GPIO_BUTTON_PIN
+        int "GPIO Button Pin"
+        default 4
+        range 0 39
+        help
+            GPIO pin number for the button input.
+            When button is pressed (connected to 3.3V), pin goes HIGH.
+            Valid range: 0-39 for ESP32.
+
+endmenu
