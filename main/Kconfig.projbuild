@@ -19,4 +19,40 @@ menu "Example Configuration"
             When button is pressed (connected to 3.3V), pin goes HIGH.
             Valid range: 0-39 for ESP32.
 
+    config OPENAI_API_KEY
+        string "OpenAI API Key"
+        default ""
+        help
+            Your OpenAI API key (or compatible service API key).
+            Required for ChatGPT integration.
+            Can also be used with LM Studio or other OpenAI-compatible services.
+
+    config OPENAI_API_URL
+        string "OpenAI API URL"
+        default "https://openrouter.ai/api/v1/chat/completions"
+        help
+            OpenAI-compatible API endpoint URL.
+            Default: https://openrouter.ai/api/v1/chat/completions (OpenRouter)
+            For OpenAI: https://api.openai.com/v1/chat/completions
+            For LM Studio: http://localhost:1234/v1/chat/completions
+            For other services: adjust URL accordingly.
+
+    config OPENAI_MODEL
+        string "OpenAI Model Name"
+        default "x-ai/grok-4.1-fast"
+        help
+            AI model to use for ChatGPT completions.
+            Default: x-ai/grok-4.1-fast (free OpenRouter model)
+            For OpenAI: gpt-3.5-turbo or gpt-4
+            For OpenRouter: See https://openrouter.ai/models for available models
+            Maximum 100 characters to prevent RAM overflow.
+
+    config INITIAL_PROMPT
+        string "Initial ChatGPT Prompt"
+        default "write me a story"
+        help
+            Initial prompt sent to ChatGPT when button is pressed.
+            This starts the endless discussion loop.
+            Maximum 200 characters to prevent RAM overflow.
+
 endmenu

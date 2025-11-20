@@ -18,6 +18,7 @@ This application subscribes to the MQTT topic `/esp32_gpio` and prints messages 
 
 - Rust 1.75+ (or use Docker)
 - Docker (optional, for containerized deployment)
+- **OpenAI/OpenRouter API Key** (see [openAi_usage.md](openAi_usage.md) for setup instructions)
 
 ## Project Structure
 
@@ -202,10 +203,84 @@ Publish test message:
 mosquitto_pub -h localhost -t /esp32_gpio -m "test"
 ```
 
+## ChatGPT API Setup
+
+**⚠️ Required for ChatGPT integration!**
+
+Before running the client, you must set up your API credentials. See **[openAi_usage.md](openAi_usage.md)** for detailed instructions on:
+- Getting an API key (OpenRouter or OpenAI)
+- Setting environment variables
+- Testing your setup
+
+**Quick start (minimum required):**
+```bash
+export OPENROUTER_API_KEY="sk-or-v1-your-key-here"
+# Base URL and model have defaults (OpenRouter + free model)
+```
+
+**Full configuration (optional):**
+```bash
+export OPENROUTER_API_KEY="sk-or-v1-your-key-here"
+export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"  # Default
+export OPENROUTER_MODEL="x-ai/grok-4.1-fast"  # Default (free model)
+```
+
+## Integration Tests
+
+Integration tests are available to verify ChatGPT API connectivity. These tests make real API calls to verify the integration works.
+
+### Prerequisites
+
+- Set `OPENROUTER_API_KEY` environment variable (or `OPENAI_API_KEY`)
+- Optionally set `OPENROUTER_BASE_URL` (or `OPENAI_API_BASE`) for custom endpoints
+- See [openAi_usage.md](openAi_usage.md) for detailed setup instructions
+
+### Running the Tests
+
+```bash
+# Set your OpenRouter API key
+export OPENROUTER_API_KEY="sk-or-v1-xxxxx"
+
+# Set OpenRouter base URL (optional, defaults to OpenAI)
+export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
+
+# Run the integration tests
+cargo test --test integration_test -- --nocapture
+```
+
+### What the Tests Do
+
+- **`test_chatgpt_api_integration`**: Tests a simple ChatGPT API call with a single message
+- **`test_conversation_history`**: Tests conversation history with multiple messages (simulates the endless discussion flow)
+
+### Example Output
+
+```
+Running tests/integration_test.rs
+Testing ChatGPT API integration...
+Using endpoint: https://openrouter.ai/api/v1
+Sending request to ChatGPT API...
+✅ Success! ChatGPT response: Hello from integration test!
+✅ Integration test passed!
+
+Testing conversation history...
+Using endpoint: https://openrouter.ai/api/v1
+Sending conversation to ChatGPT API...
+✅ Success! ChatGPT continued the story: [story continuation...]
+✅ Conversation history test passed!
+```
+
+### Troubleshooting Tests
+
+- **Missing API key**: Ensure `OPENROUTER_API_KEY` or `OPENAI_API_KEY` is set
+- **Connection errors**: Check your internet connection and API endpoint URL
+- **API errors**: Verify your API key is valid and has sufficient credits/quota
+
 ## Dependencies
 
 - **rumqttc**: MQTT client library for Rust
 - **tokio**: Async runtime (required by rumqttc)
+- **openai-api-rs**: OpenAI API client library for Rust
 
 See `Cargo.toml` for exact versions.
 

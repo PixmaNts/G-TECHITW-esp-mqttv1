@@ -17,6 +17,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+// OpenAI includes
+#include "OpenAI.h"
 
 static const char *TAG = "mqtt_example";
 
@@ -25,6 +27,13 @@ static const char *TAG = "mqtt_example";
 
 // Global MQTT client handle - needed so GPIO task can publish messages
 static esp_mqtt_client_handle_t mqtt_client_handle = NULL;
+
+// Global OpenAI handle
+static OpenAI_t *openai_handle = NULL;
+
+// Buffer for storing ChatGPT responses (limited to prevent RAM overflow)
+#define MAX_RESPONSE_LEN 500
+static char chatgpt_response_buffer[MAX_RESPONSE_LEN + 1];
 
 
 static void log_error_if_nonzero(const char *message, int error_code)
@@ -58,6 +67,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         // Subscribe to command topic for bidirectional communication
         int msg_id_sub = esp_mqtt_client_subscribe(event->client, "/esp32_commands", 0);
         ESP_LOGI(TAG, "Subscribed to /esp32_commands topic, msg_id=%d", msg_id_sub);
+        // Subscribe to /client_gpt topic to receive ChatGPT responses from Rust client
+        int msg_id_gpt = esp_mqtt_client_subscribe(event->client, "/client_gpt", 0);
+        ESP_LOGI(TAG, "Subscribed to /client_gpt topic, msg_id=%d", msg_id_gpt);
         break;
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
@@ -69,8 +81,76 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         ESP_LOGI(TAG, "MQTT_EVENT_DATA");
         ESP_LOGI(TAG, "Topic: %.*s", event->topic_len, event->topic);
         ESP_LOGI(TAG, "Data: %.*s", event->data_len, event->data);
-        // The payload is in event->data, length is event->data_len
-        // For future: can process commands here (e.g., control GPIO, change behavior, etc.)
+        
+        // Check if this is a message from /client_gpt topic (ChatGPT response from Rust client)
+        if (event->topic_len == 11 && strncmp(event->topic, "/client_gpt", 11) == 0) {
+            // Extract the message (truncate if too long to prevent RAM overflow)
+            int data_len = event->data_len;
+            if (data_len > MAX_RESPONSE_LEN) {
+                data_len = MAX_RESPONSE_LEN;
+                ESP_LOGW(TAG, "Message truncated from %d to %d bytes", event->data_len, MAX_RESPONSE_LEN);
+            }
+            
+            // Copy message to buffer (null-terminated)
+            memcpy(chatgpt_response_buffer, event->data, data_len);
+            chatgpt_response_buffer[data_len] = '\0';
+            
+            ESP_LOGI(TAG, "Received ChatGPT response from Rust client: %.*s", data_len, chatgpt_response_buffer);
+            
+            // Call OpenAI API with the received message to continue the conversation
+            if (openai_handle != NULL) {
+                // Create a chat completion object
+                OpenAI_ChatCompletion_t *chat = openai_handle->chatCreate(openai_handle);
+                if (chat != NULL) {
+                    // Use model from menuconfig (defaults to free OpenRouter model)
+                    chat->setModel(chat, CONFIG_OPENAI_MODEL);
+                    chat->setTemperature(chat, 0.7);
+                    
+                    // Send the received message to OpenAI API (save=true to maintain conversation)
+                    OpenAI_StringResponse_t *response = chat->message(chat, chatgpt_response_buffer, true);
+                    if (response != NULL && response->getError(response) == NULL) {
+                        // Get the response text
+                        uint32_t len = response->getLen(response);
+                        if (len > 0) {
+                            char *response_text = response->getData(response, 0);
+                            if (response_text != NULL) {
+                                // Truncate if too long
+                                int pub_len = strlen(response_text);
+                                if (pub_len > MAX_RESPONSE_LEN) {
+                                    pub_len = MAX_RESPONSE_LEN;
+                                    ESP_LOGW(TAG, "Response truncated before publishing");
+                                }
+                                
+                                // Publish ChatGPT response to /esp_gpt_out topic
+                                int msg_id = esp_mqtt_client_publish(
+                                    mqtt_client_handle,
+                                    "/esp_gpt_out",
+                                    response_text,
+                                    pub_len,
+                                    0,  // QoS 0
+                                    0   // Don't retain
+                                );
+                                ESP_LOGI(TAG, "Published ChatGPT response to /esp_gpt_out, msg_id=%d", msg_id);
+                                ESP_LOGI(TAG, "Response: %.*s", pub_len, response_text);
+                            }
+                        }
+                        response->deleteResponse(response);
+                    } else {
+                        const char *error = response ? response->getError(response) : "Unknown error";
+                        ESP_LOGE(TAG, "OpenAI API error: %s", error ? error : "Failed to get response");
+                        if (response) {
+                            response->deleteResponse(response);
+                        }
+                    }
+                    // Clean up chat completion object
+                    openai_handle->chatDelete(chat);
+                } else {
+                    ESP_LOGE(TAG, "Failed to create ChatCompletion object");
+                }
+            } else {
+                ESP_LOGE(TAG, "OpenAI handle not initialized");
+            }
+        }
         break;
     case MQTT_EVENT_ERROR:
         ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
@@ -91,7 +171,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 * @brief GPIO monitoring task
 * 
 * This task runs in the background and continuously checks the GPIO pin.
-* When the button is pressed (pin goes HIGH), it publishes "pressed" to /esp32_gpio topic.
+* When the button is pressed (pin goes HIGH), it calls OpenAI API with initial prompt
+* and publishes the response to /esp_gpt_out topic to start the endless discussion.
 */
 static void gpio_task(void* arg)
 {
@@ -105,20 +186,79 @@ static void gpio_task(void* arg)
         
         // Detect rising edge: button was just pressed (went from LOW to HIGH)
         if (level == 1 && !last_state) {
-            // Button is pressed!
-            if (mqtt_client_handle != NULL) {
-                // Publish "pressed" message to /esp32_gpio topic
-                int msg_id = esp_mqtt_client_publish(
-                    mqtt_client_handle, 
-                    "/esp32_gpio",  // Topic name (as specified in requirements)
-                    "pressed",      // Message payload
-                    0,              // Length (0 = auto-calculate from string)
-                    0,              // QoS level (0 = at most once)
-                    0               // Retain flag (0 = don't retain)
-                );
-                ESP_LOGI(TAG, "Button pressed! Published to /esp32_gpio, msg_id=%d", msg_id);
+            // Button is pressed! Call OpenAI API with initial prompt
+            ESP_LOGI(TAG, "Button pressed! Calling OpenAI API with initial prompt...");
+            
+            if (openai_handle != NULL && mqtt_client_handle != NULL) {
+                // Create a chat completion object
+                OpenAI_ChatCompletion_t *chat = openai_handle->chatCreate(openai_handle);
+                if (chat != NULL) {
+                    // Configure chat completion - use model from menuconfig
+                    chat->setModel(chat, CONFIG_OPENAI_MODEL);
+                    chat->setTemperature(chat, 0.7);
+                    
+                    // Get initial prompt from menuconfig
+                    const char *initial_prompt = CONFIG_INITIAL_PROMPT;
+                    ESP_LOGI(TAG, "Sending prompt to OpenAI: %s", initial_prompt);
+                    
+                    // Send to OpenAI API (save=true to maintain conversation for future calls)
+                    OpenAI_StringResponse_t *response = chat->message(chat, initial_prompt, true);
+                    if (response != NULL && response->getError(response) == NULL) {
+                        // Get the response text
+                        uint32_t len = response->getLen(response);
+                        if (len > 0) {
+                            char *response_text = response->getData(response, 0);
+                            if (response_text != NULL) {
+                                // Truncate if too long to prevent RAM overflow
+                                int pub_len = strlen(response_text);
+                                if (pub_len > MAX_RESPONSE_LEN) {
+                                    pub_len = MAX_RESPONSE_LEN;
+                                    ESP_LOGW(TAG, "Response truncated before publishing");
+                                }
+                                
+                                // Publish ChatGPT response to /esp_gpt_out topic
+                                int msg_id = esp_mqtt_client_publish(
+                                    mqtt_client_handle,
+                                    "/esp_gpt_out",
+                                    response_text,
+                                    pub_len,
+                                    0,  // QoS 0
+                                    0   // Don't retain
+                                );
+                                ESP_LOGI(TAG, "Published ChatGPT response to /esp_gpt_out, msg_id=%d", msg_id);
+                                ESP_LOGI(TAG, "Response: %.*s", pub_len, response_text);
+                                
+                                // Also publish to /esp32_gpio for backward compatibility/logging
+                                esp_mqtt_client_publish(
+                                    mqtt_client_handle,
+                                    "/esp32_gpio",
+                                    "pressed",
+                                    0,
+                                    0,
+                                    0
+                                );
+                            }
+                        }
+                        response->deleteResponse(response);
+                    } else {
+                        const char *error = response ? response->getError(response) : "Unknown error";
+                        ESP_LOGE(TAG, "OpenAI API error: %s", error ? error : "Failed to get response");
+                        if (response) {
+                            response->deleteResponse(response);
+                        }
+                    }
+                    // Clean up chat completion object
+                    openai_handle->chatDelete(chat);
+                } else {
+                    ESP_LOGE(TAG, "Failed to create ChatCompletion object");
+                }
             } else {
-                ESP_LOGW(TAG, "MQTT client not ready yet, button press ignored");
+                if (openai_handle == NULL) {
+                    ESP_LOGW(TAG, "OpenAI handle not initialized, button press ignored");
+                }
+                if (mqtt_client_handle == NULL) {
+                    ESP_LOGW(TAG, "MQTT client not ready yet, button press ignored");
+                }
             }
         }
         
@@ -219,6 +359,37 @@ void app_main(void)
     // Initialize GPIO pin before starting MQTT
     gpio_init();
 
+    // Initialize OpenAI API client
+    const char *api_key = CONFIG_OPENAI_API_KEY;
+    if (strlen(api_key) > 0) {
+        openai_handle = OpenAICreate(api_key);
+        if (openai_handle != NULL) {
+            // Set custom API URL if configured (for OpenRouter, LM Studio, etc.)
+            const char *api_url = CONFIG_OPENAI_API_URL;
+            // Check if URL is different from default OpenAI URL
+            if (strlen(api_url) > 0 && strcmp(api_url, "https://api.openai.com/v1/chat/completions") != 0) {
+                // Extract base URL (remove /v1/chat/completions if present)
+                char base_url[256];
+                strncpy(base_url, api_url, sizeof(base_url) - 1);
+                base_url[sizeof(base_url) - 1] = '\0';
+                
+                // Remove /v1/chat/completions suffix if present
+                char *suffix = strstr(base_url, "/v1/chat/completions");
+                if (suffix != NULL) {
+                    *suffix = '\0';
+                }
+                
+                OpenAIChangeBaseURL(openai_handle, base_url);
+                ESP_LOGI(TAG, "OpenAI base URL set to: %s", base_url);
+            }
+            ESP_LOGI(TAG, "OpenAI API initialized successfully");
+            ESP_LOGI(TAG, "Using model: %s", CONFIG_OPENAI_MODEL);
+        } else {
+            ESP_LOGE(TAG, "Failed to initialize OpenAI API");
+        }
+    } else {
+        ESP_LOGW(TAG, "OpenAI API key not configured. ChatGPT features will be disabled.");
+    }
 
     mqtt_app_start();
 
@@ -227,4 +398,7 @@ void app_main(void)
     xTaskCreate(gpio_task, "gpio_task", 2048, NULL, 10, NULL);
     
     ESP_LOGI(TAG, "Application initialized. Monitoring GPIO %d for button presses...", GPIO_BUTTON_PIN);
+    if (openai_handle != NULL) {
+        ESP_LOGI(TAG, "ChatGPT integration ready. Press button to start endless discussion!");
+    }
 }
